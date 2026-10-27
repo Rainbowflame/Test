@@ -1,0 +1,47 @@
+name: solve
+on:
+  workflow_dispatch:
+    inputs:
+      attempt: {required: true}
+      deadline: {required: true}
+permissions:
+  contents: write
+  actions: write
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: {seed: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]}
+    steps:
+      - uses: actions/checkout@v4
+        with: {sparse-checkout: "probSAT.c\ninst/${{ inputs.attempt }}.cnf", sparse-checkout-cone-mode: false}
+      - run: gcc -O3 -march=native -o ps probSAT.c -lm
+      - name: run
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          A=${{ inputs.attempt }}; D=${{ inputs.deadline }}
+          T=$(( D - $(date +%s) - 25 )); [ $T -lt 10 ] && exit 0
+          S=${{ matrix.seed }}
+          for k in 0 1 2 3; do
+            CB=$(python3 -c "print([4.8,5.0,5.2,5.4][($S+$k)%4])")
+            timeout $T taskset -c $k ./ps --fct 0 --cb $CB -a inst/$A.cnf $(( S*10+k )) > out$k.txt &
+          done
+          while true; do
+            for k in 0 1 2 3; do if grep -q "^s SATISFIABLE" out$k.txt 2>/dev/null; then
+              grep "^v" out$k.txt | tr -d 'v' | tr ' ' '\n' | grep -v '^$' | grep -v '^0$' > sol.txt
+              echo found; break 2; fi; done
+            jobs -r | grep -q . || break
+            sleep 1
+          done
+          if [ -f sol.txt ]; then
+            python3 -c "
+          b=['0']*1536
+          for l in open('sol.txt'):
+              v=int(l)
+              if v>0: b[v-1]='1'
+          open('sol.bits','w').write(''.join(b))"
+            curl -s -X PUT -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/${{ github.repository }}/contents/sol/$A.txt -d "{\"message\":\"sol\",\"content\":\"$(base64 -w0 sol.bits)\"}" >/dev/null
+          fi
+          pkill ps || true
