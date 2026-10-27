@@ -17,7 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {sparse-checkout: "probSAT.c\ninst/${{ inputs.attempt }}.*", sparse-checkout-cone-mode: false}
-      - run: gcc -O3 -march=native -o ps probSAT.c -lm && cat $(ls inst/${{ inputs.attempt }}.p* | sort) | gunzip > inst/${{ inputs.attempt }}.cnf && head -1 inst/${{ inputs.attempt }}.cnf
+      - run: |
+          gcc -O3 -march=native -w -std=gnu99 -Wno-implicit-function-declaration -Wno-incompatible-pointer-types -Wno-int-conversion -o ps probSAT.c -lm 2> cc.err || { echo "::warning::CC $(head -c 600 cc.err | tr '\n' ' ')"; exit 1; }
+          cat $(ls inst/${{ inputs.attempt }}.p* | sort) | gunzip > inst/${{ inputs.attempt }}.cnf 2> gz.err || { echo "::warning::GZ $(ls inst) $(head -c 300 gz.err)"; exit 1; }
+          echo "::notice::ok $(head -1 inst/${{ inputs.attempt }}.cnf) $(nproc)"
       - name: run
         env: {GH_TOKEN: "${{ github.token }}"}
         run: |
